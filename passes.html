@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Карточки пропусков</title>
+<style>
+:root{--bg:#f1f1f3;--fg:#141418;--muted:#62626c;--card:#fff;--stage:#dcdce1;--accent:#141418;--accent-fg:#fff;--line:#d5d5da;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c0c0f;--fg:#f0f0f3;--muted:#9a9aa5;--card:#16161b;--stage:#202027;--accent:#f0f0f3;--accent-fg:#0c0c0f;--line:#2a2a32;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0c0c0f;--fg:#f0f0f3;--muted:#9a9aa5;--card:#16161b;--stage:#202027;--accent:#f0f0f3;--accent-fg:#0c0c0f;--line:#2a2a32;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:0 24px}
+header{padding:48px 0 32px}
+h1{font-size:clamp(30px,5vw,48px);margin:0 0 8px;line-height:1.1}
+header p{color:var(--muted);margin:0;max-width:520px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;padding-bottom:48px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px;display:flex;flex-direction:column;transition:border-color .2s}
+.item.sel{border-color:var(--accent);border-width:2px;padding:15px}
+.stage{position:relative;aspect-ratio:3/4;border-radius:14px;background:var(--stage);overflow:hidden;cursor:grab;touch-action:pan-y}
+.stage:active{cursor:grabbing}
+.stage canvas{display:block;width:100%;height:100%}
+.tag{position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:12px;color:var(--muted);pointer-events:none}
+.item h2{margin:16px 0 2px;font-size:20px}
+.price{font-size:32px;font-weight:700;margin:0}
+.desc{color:var(--muted);font-size:14px;margin:6px 0 16px;flex:1}
+button{font:inherit;font-weight:600;background:var(--accent);color:var(--accent-fg);border:0;border-radius:999px;padding:12px 20px;cursor:pointer}
+button:hover{opacity:.88}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid var(--line);padding:20px 0 40px;color:var(--muted)}
+.bar b{color:var(--fg);font-size:20px}
+@media(max-width:820px){.grid{grid-template-columns:1fr}.stage{aspect-ratio:4/3.4}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>Карточки пропусков</h1><p>Три уровня пропуска. Покрутите каждую карточку, чтобы рассмотреть её со всех сторон, и выберите подходящую.</p></header>
+<div class="grid" id="grid"></div>
+<div class="bar"><span id="status">Пропуск не выбран</span><b id="total">$0</b></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var tiers=[
+{id:'basic',name:'Обычный',price:40,desc:'Базовый доступ ко всем основным возможностям.',base:'#08080b',hi:'#2c2c34',lines:1,metal:0.95,tier:3,n:1,acc:'#cd7f32'},
+{id:'mid',name:'Средний',price:70,desc:'Расширенный доступ и дополнительные привилегии.',base:'#08080b',hi:'#2c2c34',lines:2,metal:0.95,tier:3,n:2,acc:'#d5dae6'},
+{id:'big',name:'Большой',price:100,desc:'Полный доступ без ограничений и максимум бонусов.',base:'#08080b',hi:'#2c2c34',lines:3,metal:0.95,tier:3,n:3,acc:'#e8c26b'}
+];
+var grid=document.getElementById('grid'),status=document.getElementById('status'),total=document.getElementById('total');
+var viewers=[],selected=null;
+
+function hexA(h,a){var n=parseInt(h.slice(1),16);return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';}
+function hexM(h,k){var n=parseInt(h.slice(1),16),m=function(v){return Math.round(v+(255-v)*k);};return 'rgb('+m(n>>16&255)+','+m(n>>8&255)+','+m(n&255)+')';}
+function makeTexture(t){
+var c=document.createElement('canvas');c.width=1024;c.height=1448;var x=c.getContext('2d');x.scale(2,2);
+var g=x.createLinearGradient(0,0,512,724);g.addColorStop(0,t.hi);g.addColorStop(0.45,t.base);g.addColorStop(1,'#050506');
+x.fillStyle=g;x.fillRect(0,0,512,724);
+if(t.tier===1){x.strokeStyle='rgba(255,255,255,0.06)';x.lineWidth=2;for(var i=-724;i<512;i+=28){x.beginPath();x.moveTo(i,724);x.lineTo(i+724,0);x.stroke();}}
+else if(t.tier===2){for(var i=0;i<724;i+=3){x.fillStyle='rgba(255,255,255,'+(0.02+Math.random()*0.06)+')';x.fillRect(0,i,512,1.5);}}
+else{x.strokeStyle=hexA(t.acc,0.14);x.lineWidth=1.5;for(var i=-724;i<1236;i+=34){x.beginPath();x.moveTo(i,0);x.lineTo(i+724,724);x.moveTo(i+724,0);x.lineTo(i,724);x.stroke();}}
+if(t.tier>1){var sh=x.createLinearGradient(0,724,512,0);sh.addColorStop(0.3,'rgba(255,255,255,0)');sh.addColorStop(0.5,'rgba(255,255,255,0.16)');sh.addColorStop(0.7,'rgba(255,255,255,0)');x.fillStyle=sh;x.fillRect(0,0,512,724);}
+var bg=x.createLinearGradient(0,0,512,724);
+if(t.tier===1){bg.addColorStop(0,'rgba(255,255,255,0.7)');bg.addColorStop(0.5,'rgba(255,255,255,0.15)');bg.addColorStop(1,'rgba(255,255,255,0.5)');}else{bg.addColorStop(0,t.acc);bg.addColorStop(0.35,hexM(t.acc,0.55));bg.addColorStop(0.7,t.acc);bg.addColorStop(1,hexM(t.acc,0.55));}
+x.strokeStyle=bg;x.lineWidth=t.tier===1?3:6;x.strokeRect(24,24,464,676);
+var d=t.tier===1?32:42;x.lineWidth=1;x.strokeStyle=t.tier===1?'rgba(255,255,255,0.12)':t.acc;x.strokeRect(d,d,512-2*d,724-2*d);
+if(t.tier===3){[[24,24],[488,24],[24,700],[488,700]].forEach(function(p){x.fillStyle=t.acc;x.beginPath();x.moveTo(p[0],p[1]-16);x.lineTo(p[0]+16,p[1]);x.lineTo(p[0],p[1]+16);x.lineTo(p[0]-16,p[1]);x.fill();});}
+for(var n=0;n<9000;n++){x.fillStyle='rgba(255,255,255,'+(Math.random()*0.035)+')';x.fillRect(Math.random()*512,Math.random()*724,1,1);}
+var hr=t.tier===1?30:(t.tier===2?42:54);
+if(t.tier===1){x.fillStyle='rgba(255,255,255,0.12)';x.beginPath();x.arc(410,268,hr,0,6.283);x.fill();x.strokeStyle='rgba(255,255,255,0.3)';x.lineWidth=2;x.stroke();}
+else{var hg=x.createLinearGradient(400-hr,268-hr,400+hr,268+hr);hg.addColorStop(0,'rgba(80,220,255,0.75)');hg.addColorStop(0.35,'rgba(255,120,220,0.7)');hg.addColorStop(0.65,'rgba(255,230,120,0.7)');hg.addColorStop(1,'rgba(120,255,190,0.75)');x.fillStyle=hg;x.beginPath();x.arc(400,268,hr,0,6.283);x.fill();x.strokeStyle=t.acc;x.lineWidth=3;x.stroke();
+if(t.tier===3){for(var q=1;q<=3;q++){x.beginPath();x.arc(400,268,hr-q*12,0,6.283);x.strokeStyle='rgba(255,255,255,0.4)';x.lineWidth=1.5;x.stroke();}}}
+x.shadowColor='rgba(0,0,0,0.6)';x.shadowBlur=6;x.shadowOffsetY=2;x.fillStyle='rgba(255,255,255,0.9)';x.font='700 54px system-ui,sans-serif';x.fillText('ПРОПУСК',48,110);x.shadowBlur=0;x.shadowOffsetY=0;x.shadowColor='transparent';
+x.fillStyle=t.tier===3?t.acc:'rgba(255,255,255,0.6)';x.font='500 30px system-ui,sans-serif';x.fillText(t.name.toUpperCase(),48,155);
+x.fillStyle=t.tier===1?'rgba(255,255,255,0.4)':t.acc;x.font='500 22px system-ui,sans-serif';x.fillText('◆ '.repeat(t.n),48,198);
+// chip
+var cg=x.createLinearGradient(48,230,148,310);cg.addColorStop(0,'#d9d9de');cg.addColorStop(1,'#8d8d96');
+x.fillStyle=cg;x.fillRect(48,230,100,76);x.strokeStyle='rgba(0,0,0,0.4)';x.lineWidth=2;
+x.strokeRect(48,230,100,76);x.beginPath();x.moveTo(48,268);x.lineTo(148,268);x.moveTo(98,230);x.lineTo(98,306);x.stroke();
+// tier lines
+x.fillStyle=t.tier===1?'rgba(255,255,255,0.75)':t.acc;
+for(var k=0;k<t.lines;k++){x.fillRect(48,560+k*26,150+k*60,8);}
+x.fillStyle=t.tier===3?t.acc:'rgba(255,255,255,0.9)';x.font='700 44px system-ui,sans-serif';x.textAlign='right';x.fillText('$'+t.price,464,664);
+var tx=new THREE.CanvasTexture(c);tx.anisotropy=16;tx.encoding=THREE.sRGBEncoding;return tx;
+}
+function backTexture(t){
+var c=document.createElement('canvas');c.width=1024;c.height=1448;var x=c.getContext('2d');x.scale(2,2);
+x.fillStyle=t.base;x.fillRect(0,0,512,724);
+x.fillStyle='#050506';x.fillRect(0,70,512,110);
+x.fillStyle='rgba(255,255,255,0.75)';x.fillRect(40,230,432,60);
+x.fillStyle='#111';x.font='600 26px system-ui,sans-serif';x.fillText('Подпись владельца',54,270);
+x.fillStyle='rgba(255,255,255,0.45)';x.font='500 24px system-ui,sans-serif';x.fillText(t.name+' пропуск',40,680);
+var tx=new THREE.CanvasTexture(c);tx.anisotropy=16;tx.encoding=THREE.sRGBEncoding;return tx;
+}
+function makeEnv(rd){
+var es=new THREE.Scene();
+var gc=document.createElement('canvas');gc.width=4;gc.height=256;var gx=gc.getContext('2d');
+var gg=gx.createLinearGradient(0,0,0,256);gg.addColorStop(0,'#4a5064');gg.addColorStop(0.5,'#14151b');gg.addColorStop(1,'#050506');gx.fillStyle=gg;gx.fillRect(0,0,4,256);
+var gt=new THREE.CanvasTexture(gc);gt.encoding=THREE.sRGBEncoding;
+es.add(new THREE.Mesh(new THREE.SphereGeometry(50,32,16),new THREE.MeshBasicMaterial({map:gt,side:THREE.BackSide})));
+function panel(w,h,x,y,z,col,k){var m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({color:new THREE.Color(col).multiplyScalar(k),side:THREE.DoubleSide}));m.position.set(x,y,z);m.lookAt(0,0,0);es.add(m);}
+panel(34,12,28,26,30,0xffffff,6);
+panel(8,34,-36,4,14,0x9ab4ff,4);
+panel(44,6,0,-26,-30,0xffffff,2.5);
+panel(10,26,34,-6,-18,0xffe2c4,2.5);
+var pm=new THREE.PMREMGenerator(rd);var tex=pm.fromScene(es,0.02).texture;pm.dispose();return tex;
+}
+function roundedShape(w,h,r){
+var s=new THREE.Shape(),x=-w/2,y=-h/2;
+s.moveTo(x+r,y);s.lineTo(x+w-r,y);s.quadraticCurveTo(x+w,y,x+w,y+r);
+s.lineTo(x+w,y+h-r);s.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+s.lineTo(x+r,y+h);s.quadraticCurveTo(x,y+h,x,y+h-r);
+s.lineTo(x,y+r);s.quadraticCurveTo(x,y,x+r,y);return s;
+}
+
+tiers.forEach(function(t){
+var el=document.createElement('div');el.className='item';el.id='it-'+t.id;
+el.innerHTML='<div class="stage"><div class="tag">Потяните, чтобы повернуть</div></div><h2>'+t.name+' пропуск</h2><p class="price">$'+t.price+'</p><p class="desc">'+t.desc+'</p><button type="button">Выбрать</button>';
+grid.appendChild(el);
+var stage=el.querySelector('.stage'),btn=el.querySelector('button');
+btn.addEventListener('click',function(){
+selected=(selected===t.id)?null:t.id;
+tiers.forEach(function(o){var e=document.getElementById('it-'+o.id);var on=selected===o.id;e.classList.toggle('sel',on);e.querySelector('button').textContent=on?'Выбрано':'Выбрать';});
+var cur=tiers.filter(function(o){return o.id===selected})[0];
+status.textContent=cur?('Выбран: '+cur.name+' пропуск'):'Пропуск не выбран';
+total.textContent='$'+(cur?cur.price:0);
+});
+try{
+var scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(40,1,0.1,50);cam.position.z=6.2;
+var r=new THREE.WebGLRenderer({antialias:true,alpha:true});r.setPixelRatio(Math.min(window.devicePixelRatio||1,3));r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=1.15;
+stage.appendChild(r.domElement);
+var geo=new THREE.ExtrudeGeometry(roundedShape(2.4,3.4,0.18),{depth:0.06,bevelEnabled:true,bevelThickness:0.02,bevelSize:0.02,bevelSegments:8,curveSegments:32});
+geo.center();
+var body=new THREE.Mesh(geo,new THREE.MeshPhysicalMaterial({color:new THREE.Color(t.tier===1?t.base:t.acc).convertSRGBToLinear(),metalness:t.metal,roughness:t.tier===1?0.45:(t.tier===2?0.2:0.14),clearcoat:t.tier===1?0.1:0.8,clearcoatRoughness:0.15}));
+var card=new THREE.Group();card.add(body);
+var fp=new THREE.Mesh(new THREE.PlaneGeometry(2.36,3.34),new THREE.MeshPhysicalMaterial({map:makeTexture(t),metalness:t.tier===1?0.1:(t.tier===2?0.45:0.6),roughness:t.tier===1?0.7:(t.tier===2?0.35:0.25),clearcoat:t.tier===1?0.2:1,clearcoatRoughness:0.1}));
+fp.position.z=0.052;card.add(fp);
+var bp=new THREE.Mesh(new THREE.PlaneGeometry(2.36,3.34),new THREE.MeshPhysicalMaterial({map:backTexture(t),metalness:0.2,roughness:0.5,clearcoat:1,clearcoatRoughness:0.15}));
+bp.position.z=-0.052;bp.rotation.y=Math.PI;card.add(bp);
+card.rotation.set(0.1,-0.5,0);card.scale.setScalar(1.04);scene.add(card);scene.environment=makeEnv(r);
+scene.add(new THREE.HemisphereLight(0xffffff,0x333344,0.25));
+var l1=new THREE.DirectionalLight(0xffffff,0.7);l1.position.set(3,4,5);scene.add(l1);
+var l2=new THREE.DirectionalLight(0x9aa6ff,0.3);l2.position.set(-4,-2,3);scene.add(l2);
+var v={stage:stage,r:r,cam:cam,scene:scene,card:card,drag:false,lx:0,ly:0,dirty:true};
+function size(){var w=stage.clientWidth,h=stage.clientHeight;r.setSize(w,h,false);cam.aspect=w/h;cam.position.z=w/h<1?7.2:6.2;cam.updateProjectionMatrix();v.dirty=true;}
+v.size=size;size();
+stage.addEventListener('pointerdown',function(e){v.drag=true;v.lx=e.clientX;v.ly=e.clientY;try{stage.setPointerCapture(e.pointerId)}catch(_){}});
+stage.addEventListener('pointerup',function(){v.drag=false;});
+stage.addEventListener('pointercancel',function(){v.drag=false;});
+stage.addEventListener('pointermove',function(e){if(v.drag){v.card.rotation.y+=(e.clientX-v.lx)*0.012;v.card.rotation.x=Math.max(-1.2,Math.min(1.2,v.card.rotation.x+(e.clientY-v.ly)*0.008));v.lx=e.clientX;v.ly=e.clientY;v.dirty=true;}});
+viewers.push(v);
+}catch(err){stage.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted)">3D недоступно в этом браузере</div>';}
+});
+window.addEventListener('resize',function(){viewers.forEach(function(v){v.size();});});
+var t0=0;
+function tick(){
+requestAnimationFrame(tick);t0+=0.016;
+viewers.forEach(function(v){
+if(v.dirty){v.dirty=false;v.r.render(v.scene,v.cam);}
+});
+}
+tick();
+})();
+</script>
+</body>
+</html>
